@@ -1,10 +1,20 @@
-import random
+from cProfile import label
+from cv2 import mean
+import matplotlib
+import numpy as np
 from Game import Game, Direction as dir
+from NeuralNetwork import Layer, NeuralNetwork
+from Trainer import Robot, Trainer
+from matplotlib import pyplot as plt
 
-game = Game(4)
+x = Trainer(5, [25, 64, 32,4])
+robot, score, goats, bests, means = x.train(10, 100, 0.05)
 
-game.start()
-while game.win == False and game.game_over == False:
-    next_move = random.choice(game.available_moves)
-    game.move(next_move)
-    print(f"moves made: {game.moves_made} | last move:{next_move}\n{game}\nAvailable moves: {game.available_moves}\n")
+robot.play()
+print(robot.game)
+
+plt.plot(goats, label="GOAT")
+plt.plot(bests, label="Gen Best")
+plt.plot(means, label="Gen Avg")
+plt.legend()
+plt.show()
