@@ -1,6 +1,14 @@
-from random import random
+from enum import Enum
+from math import floor
+from operator import mod
+from random import random, sample
 import numpy as np
 from scipy.special import softmax
+
+class CrossoverMode(Enum):
+    ONE_POINT = 1
+    TWO_POINT = 2
+    RANDOM = 3
 
 def batchnorm(x, gamma=1, beta=0, eps=1e-5):
     sample_mean = x.mean(axis=0)
@@ -15,12 +23,11 @@ def batchnorm(x, gamma=1, beta=0, eps=1e-5):
 
     return out, cache
 
-
-
-def matrix_crossover(m1, m2, cross_point, mutation_prob=0):
+def matrix_random_crossover(m1, m2, mutation_prob=0):
     rows, cols = np.shape(m1)
     param_count = rows * cols
-    m1_params = round(param_count * cross_point)
+    cross_point = random()
+    m1_params = floor(param_count * cross_point)
     m2_params = param_count - m1_params
 
     result = np.zeros((rows, cols))
@@ -39,6 +46,32 @@ def matrix_crossover(m1, m2, cross_point, mutation_prob=0):
                 m1_params -= 1
     return result
 
+def matrix_simple_crossover(m1,m2, points = 1, mutation_prob = 0):
+    rows, cols = np.shape(m1)
+    param_count = rows * cols
+    cross_points = sample(range(1, param_count), points)
+    cross_points.sort()
+    flat_m1 = m1.flatten().tolist()
+    flat_m2 = m2.flatten().tolist()
+    result = flat_m1[:cross_points[0]]
+    for idx, point in enumerate(cross_points):
+        ref = flat_m2 if idx % 2 == 0 else flat_m1
+        if idx < points - 1:            
+            result = result + ref[point:cross_points[idx + 1]]
+        else:
+            result = result + ref[point:]
+    
+    for idx in range(len(result)):
+        if random() < mutation_prob:
+            result[idx] = random
+
+    return np.reshape(result, (rows, cols))
+
+def matrix_crossover(m1, m2, mode:CrossoverMode, mutation_prob = 0):
+    if mode == CrossoverMode.ONE_POINT: return matrix_simple_crossover(m1, m2, mutation_prob=mutation_prob)
+    if mode == CrossoverMode.TWO_POINT: return matrix_simple_crossover(m1, m2, points=2, mutation_prob=mutation_prob)
+    if mode == CrossoverMode.RANDOM: return matrix_random_crossover(m1, m2, mutation_prob)
+    return m1
 
 class NeuralNetwork():
     def __init__(self, layer_sizes: list, use_bias=True) -> None:
@@ -53,9 +86,9 @@ class NeuralNetwork():
             next_input = layer.process_input(next_input)
         return softmax(next_input) if use_softmax else next_input
         
-    def crossover(self, breeding_nn, cross_point, mutation_prob = 0):
+    def crossover(self, breeding_nn, mutation_prob = 0, mode=CrossoverMode.ONE_POINT):
         for idx in range(len(self.layers)):
-            self.layers[idx].crossover(breeding_nn.layers[idx], cross_point, mutation_prob)
+            self.layers[idx].crossover(breeding_nn.layers[idx], mutation_prob=mutation_prob, mode=mode)
 
 
     @property
@@ -65,7 +98,6 @@ class NeuralNetwork():
     @property
     def use_bias(self):
         return self.__use_bias
-
 
 class Layer():
     def __init__(self, input_size, output_size, use_bias=True, random_init=True, weights=None) -> None:
@@ -89,11 +121,9 @@ class Layer():
         mult = batchnorm(np.matmul(input, self.weights))[0]
         return (mult + self.bias).flatten() if self.__use_bias else mult
 
-    def crossover(self, breeding_layer, cross_point: float, mutation_prob=0):
-        weights_cross = matrix_crossover(
-            self.weights, breeding_layer.weights, cross_point, mutation_prob)
+    def crossover(self, breeding_layer, mutation_prob=0, mode:CrossoverMode = CrossoverMode.ONE_POINT):
+        weights_cross = matrix_crossover(self.weights, breeding_layer.weights, mode=mode, mutation_prob=mutation_prob)
         self.weights = weights_cross
         if self.__use_bias:
-            bias_cross = matrix_crossover(
-                self.bias, breeding_layer.bias, cross_point, mutation_prob)
+            bias_cross = matrix_crossover(self.bias, breeding_layer.bias, mode=mode, mutation_prob=mutation_prob)
             self.bias = bias_cross
