@@ -140,6 +140,10 @@ class Game():
     def board(self):
         return [x.value for x in self.__board.content]
 
+    @property
+    def matrix_board(self):
+        return self.__board.formatted
+
     def start(self):
         self.__game_over = False
         self.__win = False
