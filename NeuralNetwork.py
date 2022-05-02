@@ -82,7 +82,7 @@ class NeuralNetwork():
         self.layers = [Layer(layer_sizes[idx], layer_sizes[idx+1], use_bias)
                          for idx in range(len(layer_sizes) - 1)]
 
-    def process_input(self, input, use_softmax = False):
+    def process_input(self, input, use_softmax = True):
         next_input = input
         for layer in self.layers:
             next_input = layer.process_input(next_input)

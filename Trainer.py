@@ -1,4 +1,5 @@
 from random import choices, random
+import time
 import numpy as np
 from tqdm import tqdm
 from Game import Direction, Game
@@ -10,20 +11,20 @@ class WeightedRoulette():
     def __init__(self, weights) -> None:
         self.weights = weights
 
-    def draw(self):
+    def draw(self, amount=1):
         draw = choices([i for i in range(len(self.weights))],
-                       weights=self.weights, k=1)
-        return draw[0]
+                       weights=self.weights, k=amount)
+        return draw
 
 
 class Robot():
-    def __init__(self, board_size, brain_structure, use_bias, get_input) -> None:
+    def __init__(self, board_size, brain_structure, use_bias = True, get_input = lambda game: game.board) -> None:
         self.__board_size = board_size
-        self.__brain_structure = brain_structure
+        self.__brain_structure = brain_structure + [4]
         self.__use_bias = use_bias
         self.__get_input = get_input
         self.game = Game(board_size)
-        self.brain = NeuralNetwork(brain_structure, use_bias)
+        self.brain = NeuralNetwork(self.__brain_structure, self.__use_bias)
 
     def __get_next_move(self):
         next_move = Direction.UNK
@@ -54,11 +55,12 @@ class Robot():
 
 
 class Trainer():
-    def __init__(self, board_size, brain_structure = [16], use_bias=True, fitness_fn=lambda robot: robot.play(), stop_condition=lambda best_robot: False, crossover_mode=CrossoverMode.ONE_POINT, nn_input=lambda game: game.board) -> None:
+    def __init__(self, board_size, brain_structure = [16], use_bias=True, fitness_fn=lambda robot: robot.play(), stop_condition=lambda best_robot: False, crossover_mode=CrossoverMode.ONE_POINT, nn_input=lambda game: game.board, breeding_selection_fn = lambda fitnesses: WeightedRoulette(fitnesses).draw()[0]) -> None:
         self.__board_size = board_size
-        self.__brain_structure = brain_structure + [4]
+        self.__brain_structure = brain_structure
         self.__use_bias = use_bias
         self.__fitness_fn = fitness_fn
+        self.__breeding_selection_fn = breeding_selection_fn
         self.__crossover_mode = crossover_mode
         self.__stop_condition = stop_condition
         self.__nn_input = nn_input
@@ -69,11 +71,12 @@ class Trainer():
     def __should_stop(self, best_robot):
         return self.__stop_condition(best_robot)
 
-    def __breed_robot(self, robot: Robot, candidates, best_robot, roulette: WeightedRoulette, use_elitism, mutation_prob, cross_prob):
+    def __breed_robot(self, robot: Robot, candidates, best_robot, use_elitism, mutation_prob, cross_prob, fitnesses):
         if use_elitism and robot == best_robot:
             return
 
-        breeding_robot = candidates[roulette.draw()]
+        breeding_index = self.__breeding_selection_fn(fitnesses)
+        breeding_robot = candidates[breeding_index]
         if breeding_robot != robot and random() <= cross_prob:
             robot.crossover(breeding_robot,
                             mode=self.__crossover_mode)
@@ -92,9 +95,8 @@ class Trainer():
         return best_robot, best_fitness, fitness
 
     def __breed_generation(self, robots, best_robot, fitnesses, mutation_prob, use_elitism, parallel_workers, cross_prob):
-        roulette = WeightedRoulette(fitnesses)
         def breed(robot): return self.__breed_robot(robot, robots, best_robot,
-                                                    roulette, use_elitism, mutation_prob, cross_prob)
+                                                     use_elitism, mutation_prob, cross_prob, fitnesses)
         Parallel(n_jobs=parallel_workers)(delayed(breed)(robot)
                                           for robot in tqdm(robots, leave=False, desc="  Breeding"))
 
