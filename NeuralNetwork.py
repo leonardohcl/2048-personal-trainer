@@ -9,6 +9,12 @@ class CrossoverMode(Enum):
     TWO_POINT = 2
     RANDOM = 3
 
+def square(x):
+    return x * x
+
+def mean_sqr_errors(errors):    
+    return sum(map(square, errors)) / len(errors)
+
 def batchnorm(x, gamma=1, beta=0, eps=1e-5):
     sample_mean = x.mean(axis=0)
     sample_var = x.var(axis=0)
@@ -18,9 +24,7 @@ def batchnorm(x, gamma=1, beta=0, eps=1e-5):
     x_norm = x_centered / std
     out = gamma * x_norm + beta
 
-    cache = (x_norm, x_centered, std, gamma)
-
-    return out, cache
+    return out
 
 def matrix_random_crossover(m1, m2):
     rows, cols = np.shape(m1)
@@ -76,18 +80,39 @@ def matrix_mutation(m, mutation_prob):
     return result
     
 class NeuralNetwork():
-    def __init__(self, layer_sizes: list, use_bias=True) -> None:
+    def __init__(self, layer_sizes: list, use_bias=True, use_batch_norm = True) -> None:
         self.__layer_sizes = layer_sizes
         self.__use_bias = use_bias
-        self.layers = [Layer(layer_sizes[idx], layer_sizes[idx+1], use_bias)
+        self.layers = [Layer(layer_sizes[idx], layer_sizes[idx+1], use_bias=use_bias, use_batch_norm=use_batch_norm)
                          for idx in range(len(layer_sizes) - 1)]
+
+    def __backpropagate(self, input, errors, learning_rate):
+        layer_inputs = [input]
+        layer_errors = [errors]
+        for layer in self.layers:
+            layer_inputs.append(layer.process_input(layer_inputs[-1]))
+
+        for idx in range(len(self.layers) - 1, 0, -1):
+            error = np.matmul([layer_errors[0]], self.layers[idx].weights.transpose())
+            layer_errors = [error] + layer_errors
+
+        for idx in range(len(self.layers)):
+            adjustment = np.matmul(np.matrix(layer_errors[idx]).transpose(), [layer_inputs[idx]]).transpose()
+            self.layers[idx].weights += learning_rate * adjustment
+            if self.__use_bias:
+                self.layers[idx].bias = self.layers[idx].bias * layer_errors[idx]
 
     def process_input(self, input, use_softmax = True):
         next_input = input
         for layer in self.layers:
             next_input = layer.process_input(next_input)
         return softmax(next_input) if use_softmax else next_input
-        
+    
+    def get_error(self, input, expected, use_softmax = True, error_fn = mean_sqr_errors):
+        output = self.process_input(input, use_softmax)
+        errors = np.subtract(expected, output)
+        return error_fn(errors)
+
     def crossover(self, breeding_nn, mode=CrossoverMode.ONE_POINT):
         for idx in range(len(self.layers)):
             self.layers[idx].crossover(breeding_nn.layers[idx], mode=mode)
@@ -96,6 +121,11 @@ class NeuralNetwork():
         for idx in range(len(self.layers)):
             self.layers[idx].mutate(mutation_prob)
 
+    def learn(self, input, expected, learning_rate=0.1, use_softmax = True, error_fn = mean_sqr_errors):
+        output = self.process_input(input, use_softmax)
+        errors = np.subtract(expected, output)
+        self.__backpropagate(input, errors, learning_rate)
+        return error_fn(errors)       
 
     @property
     def layer_sizes(self):
@@ -106,10 +136,20 @@ class NeuralNetwork():
         return self.__use_bias
 
 class Layer():
-    def __init__(self, input_size, output_size, use_bias=True, random_init=True, weights=None) -> None:
+    def __init__(self, input_size, output_size, use_bias=True, random_init=True, weights=None, use_batch_norm = True) -> None:
         self.__input_size = input_size
         self.__output_size = output_size
         self.__use_bias = use_bias
+        if use_batch_norm:
+            if use_bias:
+                self.__process_output = lambda output: batchnorm((output + self.bias).flatten())
+            else: 
+                self.__process_output = lambda output: batchnorm(output)
+        else:
+            if use_bias:
+                self.__process_output = lambda output: (output + self.bias).flatten()
+            else: 
+                self.__process_output = lambda output: output
         self.bias = None
         if random_init:
             self.weights = np.random.rand(input_size, output_size)
@@ -124,8 +164,8 @@ class Layer():
         return f"Layer in:{self.__input_size} out:{self.__output_size}"
 
     def process_input(self, input):
-        mult = batchnorm(np.matmul(input, self.weights))[0]
-        return (mult + self.bias).flatten() if self.__use_bias else mult
+        output = np.matmul(input, self.weights)
+        return self.__process_output(output) 
 
     def crossover(self, breeding_layer, mode:CrossoverMode = CrossoverMode.ONE_POINT):
         weights_cross = matrix_crossover(self.weights, breeding_layer.weights, mode=mode)
