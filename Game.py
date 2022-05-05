@@ -144,6 +144,10 @@ class Game():
     def matrix_board(self):
         return self.__board.formatted
 
+    @property
+    def board_size(self):
+        return self.__size
+
     def start(self):
         self.__game_over = False
         self.__win = False
@@ -240,7 +244,7 @@ class Board():
 
     @property
     def max(self):
-        return max([sqr.value for sqr in self.__content])
+        return max([sqr.value for sqr in self.__content])       
 
 
 class Square():

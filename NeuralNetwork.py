@@ -1,6 +1,6 @@
 from enum import Enum
 from math import floor
-from random import random, sample
+from random import random, sample, uniform
 import numpy as np
 from scipy.special import softmax
 
@@ -9,8 +9,19 @@ class CrossoverMode(Enum):
     TWO_POINT = 2
     RANDOM = 3
 
+class ActivationFunction(Enum):
+    NONE = 0
+    ReLU = 1
+    SOFTMAX = 2
+
 def square(x):
     return x * x
+
+def relu(vals):
+    return np.array([max([0.0,x]) for x in vals])
+
+def softmax(vals):
+    return softmax(vals)
 
 def mean_sqr_errors(errors):    
     return sum(map(square, errors)) / len(errors)
@@ -76,15 +87,21 @@ def matrix_mutation(m, mutation_prob):
     for x in range(rows):
         for y in range(cols):
             if random() < mutation_prob:
-                result[x][y] = random()
+                result[x][y] = uniform(-1,1)
     return result
     
 class NeuralNetwork():
-    def __init__(self, layer_sizes: list, use_bias=True, use_batch_norm = True) -> None:
+    def __init__(self, layer_sizes: list, use_bias=True, use_batch_norm = True, activation_fn = ActivationFunction.ReLU, random_init=True) -> None:
         self.__layer_sizes = layer_sizes
         self.__use_bias = use_bias
-        self.layers = [Layer(layer_sizes[idx], layer_sizes[idx+1], use_bias=use_bias, use_batch_norm=use_batch_norm)
+        self.layers = [Layer(layer_sizes[idx], layer_sizes[idx+1], use_bias=use_bias, use_batch_norm=use_batch_norm, random_init=random_init)
                          for idx in range(len(layer_sizes) - 1)]
+        if activation_fn == ActivationFunction.ReLU:
+            self.__activation_fn = relu
+        elif activation_fn == ActivationFunction.SOFTMAX:
+            self.__activation_fn = softmax
+        else:
+            self.__activation_fn = lambda x: x
 
     def __backpropagate(self, input, errors, learning_rate):
         layer_inputs = [input]
@@ -102,14 +119,15 @@ class NeuralNetwork():
             if self.__use_bias:
                 self.layers[idx].bias = self.layers[idx].bias * layer_errors[idx]
 
-    def process_input(self, input, use_softmax = True):
+    def process_input(self, input):
         next_input = input
         for layer in self.layers:
             next_input = layer.process_input(next_input)
-        return softmax(next_input) if use_softmax else next_input
+            next_input = self.__activation_fn(next_input)
+        return next_input
     
-    def get_error(self, input, expected, use_softmax = True, error_fn = mean_sqr_errors):
-        output = self.process_input(input, use_softmax)
+    def get_error(self, input, expected, error_fn = mean_sqr_errors):
+        output = self.process_input(input)
         errors = np.subtract(expected, output)
         return error_fn(errors)
 
@@ -121,8 +139,8 @@ class NeuralNetwork():
         for idx in range(len(self.layers)):
             self.layers[idx].mutate(mutation_prob)
 
-    def learn(self, input, expected, learning_rate=0.1, use_softmax = True, error_fn = mean_sqr_errors):
-        output = self.process_input(input, use_softmax)
+    def learn(self, input, expected, learning_rate=0.1, error_fn = mean_sqr_errors):
+        output = self.process_input(input)
         errors = np.subtract(expected, output)
         self.__backpropagate(input, errors, learning_rate)
         return error_fn(errors)       
@@ -152,13 +170,13 @@ class Layer():
                 self.__process_output = lambda output: output
         self.bias = None
         if random_init:
-            self.weights = np.random.rand(input_size, output_size)
+            self.weights = np.random.uniform(-1, 1, (input_size, output_size))
             if use_bias:
-                self.bias = np.random.rand(1, output_size)
+                self.bias = np.random.uniform(-1, 1, (1,output_size))
         else:
             self.weights = np.zeros((input_size, output_size))
             if use_bias:
-                self.bias = np.zeros(1, output_size)
+                self.bias = np.zeros((1, output_size))
 
     def __str__(self) -> str:
         return f"Layer in:{self.__input_size} out:{self.__output_size}"
